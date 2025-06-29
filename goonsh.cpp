@@ -20,14 +20,35 @@
 #include <readline/history.h>
 #include <sys/ioctl.h>
 #include <iomanip>
+#include <signal.h>
+#include <regex>
+#include <readline/rltypedefs.h>
 
 std::vector<std::string> split(const std::string& line) {
-    std::istringstream iss(line);
     std::vector<std::string> tokens;
     std::string token;
-    while (iss >> token) {
-        tokens.push_back(token);
+    bool in_single = false, in_double = false, escape = false;
+    for (size_t i = 0; i < line.size(); ++i) {
+        char c = line[i];
+        if (escape) {
+            token += c;
+            escape = false;
+        } else if (c == '\\') {
+            escape = true;
+        } else if (c == '"' && !in_single) {
+            in_double = !in_double;
+        } else if (c == '\'' && !in_double) {
+            in_single = !in_single;
+        } else if (isspace(c) && !in_single && !in_double) {
+            if (!token.empty()) {
+                tokens.push_back(token);
+                token.clear();
+            }
+        } else {
+            token += c;
+        }
     }
+    if (!token.empty()) tokens.push_back(token);
     return tokens;
 }
 
@@ -86,22 +107,47 @@ std::vector<std::string> get_path_commands() {
     return cmds;
 }
 
+std::string expand_envvars(const std::string& input);
+std::string expand_path(const std::string& path) {
+    std::string p = path;
+    // Expand ~ to home
+    if (!p.empty() && p[0] == '~') {
+        const char* home = getenv("HOME");
+        if (home) p = std::string(home) + p.substr(1);
+    }
+    // Expand envvars
+    p = expand_envvars(p);
+    return p;
+}
+
 std::vector<std::string> get_files(const std::string& prefix) {
     std::vector<std::string> files;
+    std::string expanded_prefix = expand_path(prefix);
     std::string dir = ".";
-    std::string file_prefix = prefix;
-    auto slash = prefix.rfind('/');
+    std::string file_prefix = expanded_prefix;
+    auto slash = expanded_prefix.rfind('/');
+    std::string user_prefix = prefix;
     if (slash != std::string::npos) {
-        dir = prefix.substr(0, slash);
-        file_prefix = prefix.substr(slash+1);
+        dir = expanded_prefix.substr(0, slash);
+        file_prefix = expanded_prefix.substr(slash+1);
+        user_prefix = prefix.substr(0, prefix.rfind('/')+1);
+    } else {
+        user_prefix = "";
     }
     DIR* d = opendir(dir.c_str());
     if (!d) return files;
     struct dirent* entry;
     while ((entry = readdir(d))) {
         std::string name = entry->d_name;
-        if (name.find(file_prefix) == 0)
-            files.push_back((dir == "." ? name : dir + "/" + name));
+        if (name.find(file_prefix) == 0) {
+            std::string fullpath = dir + "/" + name;
+            struct stat st;
+            if (stat(fullpath.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
+                files.push_back(user_prefix + name + "/");
+            } else {
+                files.push_back(user_prefix + name);
+            }
+        }
     }
     closedir(d);
     std::sort(files.begin(), files.end());
@@ -140,6 +186,81 @@ char** goonsh_completion(const char* text, int start, int end) {
     return rl_completion_matches(text, completion_generator);
 }
 
+void sigint_handler(int) {
+    std::cout << std::endl;
+    rl_on_new_line();
+    rl_replace_line("", 0);
+    rl_redisplay();
+}
+
+// Expand environment variables in a string (e.g., "$HOME/foo" -> "/home/user/foo")
+std::string expand_envvars(const std::string& input) {
+    std::string result;
+    std::regex env_re(R"(\$([A-Za-z_][A-Za-z0-9_]*))");
+    std::sregex_iterator it(input.begin(), input.end(), env_re), end;
+    size_t last = 0;
+    for (; it != end; ++it) {
+        result += input.substr(last, it->position() - last);
+        const char* val = getenv((*it)[1].str().c_str());
+        if (val) result += val;
+        last = it->position() + it->length();
+    }
+    result += input.substr(last);
+    return result;
+}
+
+// Expand envvars in all args
+std::vector<std::string> expand_args(const std::vector<std::string>& args) {
+    std::vector<std::string> out;
+    for (const auto& arg : args) out.push_back(expand_envvars(arg));
+    return out;
+}
+
+// --- Autosuggestion logic ---
+std::string current_suggestion;
+
+// Find a suggestion from history that starts with the current input
+std::string find_suggestion(const char* input) {
+    HIST_ENTRY** hist = history_list();
+    if (!hist) return "";
+    std::string prefix = input ? input : "";
+    for (int i = history_length - 1; i >= 0; --i) {
+        std::string h = hist[i]->line;
+        if (h.find(prefix) == 0 && h != prefix) {
+            return h.substr(prefix.size());
+        }
+    }
+    return "";
+}
+
+// Custom redisplay to show autosuggestion
+void goonsh_redisplay() {
+    rl_redisplay();
+    std::string suggestion = find_suggestion(rl_line_buffer);
+    if (!suggestion.empty()) {
+        // Save cursor position
+        printf("\033[s");
+        // Print suggestion in gray
+        printf("\033[90m%s\033[0m", suggestion.c_str());
+        // Restore cursor
+        printf("\033[u");
+        fflush(stdout);
+    }
+    current_suggestion = suggestion;
+}
+
+// Accept suggestion with right arrow
+int accept_suggestion(int, int) {
+    if (!current_suggestion.empty()) {
+        rl_insert_text(current_suggestion.c_str());
+        rl_point = rl_end;
+        current_suggestion.clear();
+        rl_redisplay();
+        return 0;
+    }
+    return 0;
+}
+
 int main() {
     std::string line;
     std::string prompt = "goonsh$ ";
@@ -147,9 +268,13 @@ int main() {
     load_config(aliases, prompt, rc_commands);
     load_history_file();
     rl_attempted_completion_function = goonsh_completion;
-    std::cout << "Goonsh. Type 'help' for commands. 'exit' or 'quit' to leave." << std::endl;
+    rl_redisplay_function = goonsh_redisplay;
+    rl_bind_keyseq("\033[C", accept_suggestion); // Right arrow
+    signal(SIGINT, sigint_handler);
+    std::cout << "Welcome To Goonsh >~< (Type 'help' for commands. 'exit' or 'quit' to leave)" << std::endl;
 
     // Execute commands from ~/.goonshrc
+    int last_status = 0;
     for (const auto& rc_line : rc_commands) {
         if (rc_line.empty()) continue;
         auto args = split(rc_line);
@@ -160,9 +285,54 @@ int main() {
             alias_args.insert(alias_args.end(), args.begin() + 1, args.end());
             args = alias_args;
         }
+        // Expand envvars in all args
+        args = expand_args(args);
+        // Inline assignment: VAR=val
+        if (args[0].find('=') != std::string::npos && args[0].find('=') != 0 && args[0].find('=') < args[0].size()-1 && args[0].find_first_of(" ") == std::string::npos) {
+            auto eq = args[0].find('=');
+            std::string var = args[0].substr(0, eq);
+            std::string val = args[0].substr(eq+1);
+            setenv(var.c_str(), val.c_str(), 1);
+            continue;
+        }
         std::string cmd = args[0];
         if (cmd == "exit" || cmd == "quit") break;
         if (cmd == "help") { print_help(); continue; }
+        if (cmd == "cd") {
+            const char* target = (args.size() > 1) ? args[1].c_str() : getenv("HOME");
+            if (chdir(target) != 0) {
+                perror("cd");
+            }
+            continue;
+        }
+        if (cmd == "export") {
+            if (args.size() == 2 && args[1].find('=') != std::string::npos) {
+                auto eq = args[1].find('=');
+                std::string var = args[1].substr(0, eq);
+                std::string val = args[1].substr(eq+1);
+                setenv(var.c_str(), val.c_str(), 1);
+            } else if (args.size() == 2) {
+                setenv(args[1].c_str(), getenv(args[1].c_str()) ? getenv(args[1].c_str()) : "", 1);
+            } else {
+                std::cerr << "Usage: export VAR or export VAR=val" << std::endl;
+            }
+            continue;
+        }
+        if (cmd == "unset") {
+            if (args.size() == 2) {
+                unsetenv(args[1].c_str());
+            } else {
+                std::cerr << "Usage: unset VAR" << std::endl;
+            }
+            continue;
+        }
+        if (cmd == "env") {
+            extern char **environ;
+            for (char **env = environ; *env; ++env) {
+                std::cout << *env << std::endl;
+            }
+            continue;
+        }
         if (cmd == "ls") {
             std::string path = (args.size() > 1) ? args[1] : ".";
             DIR* dir = opendir(path.c_str());
@@ -206,37 +376,122 @@ int main() {
             for (auto& arg : args) cargs.push_back(const_cast<char*>(arg.c_str()));
             cargs.push_back(nullptr);
             execvp(cargs[0], cargs.data());
-            perror("execvp");
-            exit(1);
+            std::cerr << "goonsh: command not found: " << args[0] << std::endl;
+            exit(127);
         } else if (pid > 0) {
             int status;
             waitpid(pid, &status, 0);
+            last_status = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
         } else {
             perror("fork");
+            last_status = 1;
         }
     }
 
     while (true) {
-        char* input = readline(prompt.c_str());
-        if (!input) break;
+        bool should_exit = false;
+                char* input = readline(prompt.c_str());
+        if (!input) {
+            break;
+        }
         line = input;
         free(input);
-        if (line.empty()) continue;
+        // Remove comments (not inside quotes)
+        bool in_single = false, in_double = false;
+        for (size_t i = 0; i < line.size(); ++i) {
+            if (line[i] == '"' && !in_single) in_double = !in_double;
+            else if (line[i] == '\'' && !in_double) in_single = !in_single;
+            else if (line[i] == '#' && !in_single && !in_double) { line = line.substr(0, i); break; }
+        }
+        // Ignore empty/whitespace-only input
+        if (line.find_first_not_of(" \t\r\n") == std::string::npos) continue;
         add_history(line.c_str());
-        auto args = split(line);
+
+        // Advanced command chaining: split by ;, &&, || (not in quotes)
+        std::vector<std::pair<std::string, std::string>> segments; // {cmd, op}
+        size_t pos = 0, last = 0;
+        in_single = in_double = false;
+        std::string last_op;
+        while (pos < line.size()) {
+            if (line[pos] == '"' && !in_single) in_double = !in_double;
+            else if (line[pos] == '\'' && !in_double) in_single = !in_single;
+            else if (!in_single && !in_double) {
+                if (line.compare(pos, 2, "&&") == 0) {
+                    segments.emplace_back(line.substr(last, pos-last), last_op);
+                    last_op = "&&";
+                    pos += 2; last = pos; continue;
+                } else if (line.compare(pos, 2, "||") == 0) {
+                    segments.emplace_back(line.substr(last, pos-last), last_op);
+                    last_op = "||";
+                    pos += 2; last = pos; continue;
+                } else if (line[pos] == ';') {
+                    segments.emplace_back(line.substr(last, pos-last), last_op);
+                    last_op = ";";
+                    ++pos; last = pos; continue;
+                }
+            }
+            ++pos;
+        }
+        segments.emplace_back(line.substr(last), last_op);
+        int last_status = 0;
+        for (const auto& seg : segments) {
+        std::string segline = seg.first;
+        std::string op = seg.second;
+                if (segline.find_first_not_of(" \t\r\n") == std::string::npos) continue;
+        if (op == "&&" && last_status != 0) continue;
+        if (op == "||" && last_status == 0) continue;
+        auto args = split(segline);
         if (args.empty()) continue;
-        // Alias expansion
+                // Alias expansion
         if (aliases.count(args[0])) {
-            std::vector<std::string> alias_args = split(aliases[args[0]]);
-            alias_args.insert(alias_args.end(), args.begin() + 1, args.end());
-            args = alias_args;
+        std::vector<std::string> alias_args = split(aliases[args[0]]);
+        alias_args.insert(alias_args.end(), args.begin() + 1, args.end());
+        args = alias_args;
+        }
+        // Expand envvars in all args
+        args = expand_args(args);
+        // Inline assignment: VAR=val
+        if (args[0].find('=') != std::string::npos && args[0].find('=') != 0 && args[0].find('=') < args[0].size()-1 && args[0].find_first_of(" ") == std::string::npos) {
+        auto eq = args[0].find('=');
+        std::string var = args[0].substr(0, eq);
+        std::string val = args[0].substr(eq+1);
+        setenv(var.c_str(), val.c_str(), 1);
+                continue;
         }
         std::string cmd = args[0];
-        if (cmd == "exit" || cmd == "quit") break;
+        if (cmd == "exit" || cmd == "quit") { should_exit = true; break; }
         if (cmd == "help") { print_help(); continue; }
+        if (cmd == "cd") {
+            const char* target = (args.size() > 1) ? args[1].c_str() : getenv("HOME");
+                        if (chdir(target) != 0) {
+                perror("cd");
+            }
+            continue;
+        }
+        if (cmd == "export") {
+            if (args.size() == 2 && args[1].find('=') != std::string::npos) {
+                auto eq = args[1].find('=');
+                std::string var = args[1].substr(0, eq);
+                std::string val = args[1].substr(eq+1);
+                setenv(var.c_str(), val.c_str(), 1);
+                            } else if (args.size() == 2) {
+                setenv(args[1].c_str(), getenv(args[1].c_str()) ? getenv(args[1].c_str()) : "", 1);
+                            } else {
+                std::cerr << "Usage: export VAR or export VAR=val" << std::endl;
+            }
+            continue;
+        }
+        if (cmd == "unset") {
+            if (args.size() == 2) {
+                unsetenv(args[1].c_str());
+                            } else {
+                std::cerr << "Usage: unset VAR" << std::endl;
+            }
+            continue;
+        }
         if (cmd == "ls") {
             std::string path = (args.size() > 1) ? args[1] : ".";
-            DIR* dir = opendir(path.c_str());
+                        DIR* dir = opendir(path.c_str());
             if (!dir) { perror("ls"); continue; }
             std::vector<std::string> files;
             struct dirent* entry;
@@ -271,7 +526,7 @@ int main() {
             continue;
         }
         // External command
-        pid_t pid = fork();
+                pid_t pid = fork();
         if (pid == 0) {
             std::vector<char*> cargs;
             for (auto& arg : args) cargs.push_back(const_cast<char*>(arg.c_str()));
@@ -282,10 +537,16 @@ int main() {
         } else if (pid > 0) {
             int status;
             waitpid(pid, &status, 0);
-        } else {
+            last_status = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+                    } else {
             perror("fork");
+            last_status = 1;
         }
     }
     save_history_file();
-    return 0;
+    if (should_exit) {
+                break;
+    }
+}
+return 0;
 }
