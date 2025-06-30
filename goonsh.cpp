@@ -23,168 +23,17 @@
 #include <signal.h>
 #include <regex>
 #include <readline/rltypedefs.h>
-
-std::vector<std::string> split(const std::string& line) {
-    std::vector<std::string> tokens;
-    std::string token;
-    bool in_single = false, in_double = false, escape = false;
-    for (size_t i = 0; i < line.size(); ++i) {
-        char c = line[i];
-        if (escape) {
-            token += c;
-            escape = false;
-        } else if (c == '\\') {
-            escape = true;
-        } else if (c == '"' && !in_single) {
-            in_double = !in_double;
-        } else if (c == '\'' && !in_double) {
-            in_single = !in_single;
-        } else if (isspace(c) && !in_single && !in_double) {
-            if (!token.empty()) {
-                tokens.push_back(token);
-                token.clear();
-            }
-        } else {
-            token += c;
-        }
-    }
-    if (!token.empty()) tokens.push_back(token);
-    return tokens;
-}
-
-const std::string HISTORY_FILE = std::string(getenv("HOME")) + "/.goonsh_history";
-void load_history_file() {
-    read_history(HISTORY_FILE.c_str());
-}
-void save_history_file() {
-    write_history(HISTORY_FILE.c_str());
-}
-
-const std::string RC_FILE = std::string(getenv("HOME")) + "/.goonshrc";
-void load_config(std::map<std::string, std::string>& aliases, std::string& prompt, std::vector<std::string>& rc_commands) {
-    std::ifstream file(RC_FILE);
-    std::string line;
-    while (std::getline(file, line)) {
-        if (line.rfind("alias ", 0) == 0) {
-            auto eq = line.find('=');
-            if (eq != std::string::npos) {
-                std::string k = line.substr(6, eq-6);
-                std::string v = line.substr(eq+1);
-                v.erase(std::remove(v.begin(), v.end(), '"'), v.end());
-                v.erase(std::remove(v.begin(), v.end(), '\''), v.end());
-                aliases[k] = v;
-            }
-        } else if (line.rfind("prompt=", 0) == 0) {
-            prompt = line.substr(7);
-        } else if (!line.empty() && line[0] != '#') {
-            rc_commands.push_back(line);
-        }
-    }
-}
+#include "utils.h"
+#include "history.h"
+#include "config.h"
+#include "completion.h"
 
 void print_help() {
     std::cout << "Available commands:\ncd, ls, pwd, echo, cat, touch, rm, mkdir, rmdir, cp, mv, head, tail, grep, wc, whoami, date, env, export, unset, history, which, clear, alias, unalias, help, exit, quit, [external commands]" << std::endl;
 }
 
-std::vector<std::string> get_path_commands() {
-    std::vector<std::string> cmds;
-    char* path = getenv("PATH");
-    if (!path) return cmds;
-    std::istringstream iss(path);
-    std::string dir;
-    while (std::getline(iss, dir, ':')) {
-        DIR* d = opendir(dir.c_str());
-        if (!d) continue;
-        struct dirent* entry;
-        while ((entry = readdir(d))) {
-            if (entry->d_type == DT_REG || entry->d_type == DT_LNK || entry->d_type == DT_UNKNOWN)
-                cmds.push_back(entry->d_name);
-        }
-        closedir(d);
-    }
-    std::sort(cmds.begin(), cmds.end());
-    cmds.erase(std::unique(cmds.begin(), cmds.end()), cmds.end());
-    return cmds;
-}
-
-std::string expand_envvars(const std::string& input);
-std::string expand_path(const std::string& path) {
-    std::string p = path;
-    // Expand ~ to home
-    if (!p.empty() && p[0] == '~') {
-        const char* home = getenv("HOME");
-        if (home) p = std::string(home) + p.substr(1);
-    }
-    // Expand envvars
-    p = expand_envvars(p);
-    return p;
-}
-
-std::vector<std::string> get_files(const std::string& prefix) {
-    std::vector<std::string> files;
-    std::string expanded_prefix = expand_path(prefix);
-    std::string dir = ".";
-    std::string file_prefix = expanded_prefix;
-    auto slash = expanded_prefix.rfind('/');
-    std::string user_prefix = prefix;
-    if (slash != std::string::npos) {
-        dir = expanded_prefix.substr(0, slash);
-        file_prefix = expanded_prefix.substr(slash+1);
-        user_prefix = prefix.substr(0, prefix.rfind('/')+1);
-    } else {
-        user_prefix = "";
-    }
-    DIR* d = opendir(dir.c_str());
-    if (!d) return files;
-    struct dirent* entry;
-    while ((entry = readdir(d))) {
-        std::string name = entry->d_name;
-        if (name.find(file_prefix) == 0) {
-            std::string fullpath = dir + "/" + name;
-            struct stat st;
-            if (stat(fullpath.c_str(), &st) == 0 && S_ISDIR(st.st_mode)) {
-                files.push_back(user_prefix + name + "/");
-            } else {
-                files.push_back(user_prefix + name);
-            }
-        }
-    }
-    closedir(d);
-    std::sort(files.begin(), files.end());
-    return files;
-}
-
 std::vector<std::string> builtins = {"cd","ls","pwd","echo","cat","touch","rm","mkdir","rmdir","cp","mv","head","tail","grep","wc","whoami","date","env","export","unset","history","which","clear","alias","unalias","help","exit","quit"};
 std::map<std::string, std::string> aliases;
-
-char* completion_generator(const char* text, int state) {
-    static size_t list_index;
-    static std::vector<std::string> matches;
-    if (state == 0) {
-        matches.clear();
-        std::string prefix(text);
-        // Command completion for first word
-        rl_completion_append_character = ' ';
-        if (rl_point == 0 || (rl_line_buffer && std::string(rl_line_buffer).find(' ') == std::string::npos)) {
-            for (const auto& b : builtins) if (b.find(prefix) == 0) matches.push_back(b);
-            for (const auto& a : aliases) if (a.first.find(prefix) == 0) matches.push_back(a.first);
-            for (const auto& c : get_path_commands()) if (c.find(prefix) == 0) matches.push_back(c);
-        } else {
-            // File completion
-            for (const auto& f : get_files(prefix)) matches.push_back(f);
-        }
-        list_index = 0;
-    }
-    if (list_index < matches.size()) {
-        return strdup(matches[list_index++].c_str());
-    }
-    return nullptr;
-}
-
-char** goonsh_completion(const char* text, int start, int end) {
-    (void)start; (void)end;
-    return rl_completion_matches(text, completion_generator);
-}
 
 void sigint_handler(int) {
     std::cout << std::endl;
@@ -193,79 +42,11 @@ void sigint_handler(int) {
     rl_redisplay();
 }
 
-// Expand environment variables in a string (e.g., "$HOME/foo" -> "/home/user/foo")
-std::string expand_envvars(const std::string& input) {
-    std::string result;
-    std::regex env_re(R"(\$([A-Za-z_][A-Za-z0-9_]*))");
-    std::sregex_iterator it(input.begin(), input.end(), env_re), end;
-    size_t last = 0;
-    for (; it != end; ++it) {
-        result += input.substr(last, it->position() - last);
-        const char* val = getenv((*it)[1].str().c_str());
-        if (val) result += val;
-        last = it->position() + it->length();
-    }
-    result += input.substr(last);
-    return result;
-}
-
 // Expand envvars in all args
 std::vector<std::string> expand_args(const std::vector<std::string>& args) {
     std::vector<std::string> out;
     for (const auto& arg : args) out.push_back(expand_envvars(arg));
     return out;
-}
-
-// --- Autosuggestion logic ---
-std::string current_suggestion;
-
-// Find a suggestion from history that starts with the current input
-std::string find_suggestion(const char* input) {
-    HIST_ENTRY** hist = history_list();
-    if (!hist) return "";
-    std::string prefix = input ? input : "";
-    if (prefix.empty()) return "";
-    for (int i = history_length - 1; i >= 0; --i) {
-        std::string h = hist[i]->line;
-        if (h.find(prefix) == 0 && h != prefix) {
-            return h.substr(prefix.size());
-        }
-    }
-    return "";
-}
-
-// Custom redisplay to show autosuggestion
-void goonsh_redisplay() {
-    rl_redisplay();
-    std::string suggestion = find_suggestion(rl_line_buffer);
-    if (!suggestion.empty()) {
-        // Save cursor position
-        printf("\033[s");
-        // Print suggestion in gray
-        printf("\033[90m%s\033[0m", suggestion.c_str());
-        // Restore cursor
-        printf("\033[u");
-        fflush(stdout);
-    } else if (current_suggestion.length() > 0) {
-        // Clear previous suggestion if input is now empty or no suggestion
-        printf("\033[s");
-        for (size_t i = 0; i < current_suggestion.length(); ++i) putchar(' ');
-        printf("\033[u");
-        fflush(stdout);
-    }
-    current_suggestion = suggestion;
-}
-
-// Accept suggestion with right arrow
-int accept_suggestion(int, int) {
-    if (!current_suggestion.empty()) {
-        rl_insert_text(current_suggestion.c_str());
-        rl_point = rl_end;
-        current_suggestion.clear();
-        rl_redisplay();
-        return 0;
-    }
-    return 0;
 }
 
 int main() {
