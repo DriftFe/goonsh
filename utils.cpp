@@ -55,12 +55,10 @@ std::string expand_envvars(const std::string& input) {
 
 std::string expand_path(const std::string& path) {
     std::string p = path;
-    // Expand ~ to home
     if (!p.empty() && p[0] == '~') {
         const char* home = getenv("HOME");
         if (home) p = std::string(home) + p.substr(1);
     }
-    // Expand envvars
     p = expand_envvars(p);
     return p;
 }
