@@ -23,6 +23,7 @@
 #include <readline/rltypedefs.h>
 #include <iomanip>
 #include <functional>
+#include <termios.h>
 #include <cassert>
 #include <cstdlib>
 #include <set>
@@ -53,14 +54,26 @@
 #define COLOR_MAGENTA "\033[35m"
 #define COLOR_BOLD    "\033[1m"
 
+// Debug mode: set GOONSH_DEBUG=1 in environment to enable
+bool GOONSH_DEBUG = (getenv("GOONSH_DEBUG") && std::string(getenv("GOONSH_DEBUG")) == "1");
+#define DBG(fmt, ...) do { if (GOONSH_DEBUG) fprintf(stderr, "[DBG] " fmt "\n", ##__VA_ARGS__); } while(0)
+
 std::vector<std::string> builtins = {"cd","ls","pwd","echo","cat","touch","rm","mkdir","rmdir","cp","mv","head","tail","grep","wc","whoami","date","env","export","unset","history","which","clear","alias","unalias","help","exit","quit","man","time","jobs","fg","bg"};
 std::map<std::string, std::string> aliases;
 std::map<std::string, std::string> shell_vars = {{"GOONSH_THEME", "default"}};
 int last_status = 0;
 std::vector<pid_t> bg_jobs;
 
-// --- Utility Functions ---
+// --- SIGWINCH handler (must be global for signal) ---
+void handle_winch(int sig) {
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+    // Optionally store w.ws_row and w.ws_col if needed
+    // Do not redraw prompt here
+    // Let readline handle SIGWINCH internally
+}
 
+// --- Utility Functions ---
 std::string get_prompt(const std::string& ps1) {
     std::ostringstream out;
     for (size_t i = 0; i < ps1.size(); ++i) {
@@ -87,100 +100,6 @@ std::string get_prompt(const std::string& ps1) {
     }
     return out.str();
 }
-
-// --- Globbing ---
-std::vector<std::string> expand_glob(const std::string& pattern) {
-    glob_t globbuf;
-    std::vector<std::string> results;
-    if (glob(pattern.c_str(), 0, nullptr, &globbuf) == 0) {
-        for (size_t i = 0; i < globbuf.gl_pathc; ++i) {
-            results.push_back(globbuf.gl_pathv[i]);
-        }
-    }
-    globfree(&globbuf);
-    if (results.empty()) results.push_back(pattern); // fallback
-    return results;
-}
-
-// --- Brace Expansion ---
-std::vector<std::string> expand_braces(const std::string& arg) {
-    std::regex brace_re(R"(\{(\d+)\.\.(\d+)\})");
-    std::smatch m;
-    if (std::regex_search(arg, m, brace_re)) {
-        int start = std::stoi(m[1]);
-        int end = std::stoi(m[2]);
-        std::vector<std::string> expanded;
-        for (int i = start; i <= end; ++i) {
-            std::string s = arg;
-            s.replace(m.position(0), m.length(0), std::to_string(i));
-            expanded.push_back(s);
-        }
-        return expanded;
-    }
-    return {arg};
-}
-
-// --- Command Substitution ---
-std::string command_substitute(const std::string& arg) {
-    std::string out = arg;
-    std::regex sub_re(R"(\$\(([^)]+)\))");
-    std::smatch m;
-    while (std::regex_search(out, m, sub_re)) {
-        std::string cmd = m[1];
-        FILE* fp = popen(cmd.c_str(), "r");
-        std::string result;
-        if (fp) {
-            char buf[256];
-            while (fgets(buf, sizeof(buf), fp)) result += buf;
-            pclose(fp);
-        }
-        // Remove trailing newline
-        if (!result.empty() && result.back() == '\n') result.pop_back();
-        out.replace(m.position(0), m.length(0), result);
-    }
-    return out;
-}
-
-// --- Math Expansion ---
-std::string math_expand(const std::string& arg) {
-    std::regex math_re(R"(\$\(\(([^)]+)\)\))");
-    std::smatch m;
-    if (std::regex_search(arg, m, math_re)) {
-        std::string expr = m[1];
-        // Only support +, -, *, /, % and integers for now
-        int result = 0;
-        std::istringstream iss(expr);
-        int lhs; char op; int rhs;
-        iss >> lhs >> op >> rhs;
-        switch (op) {
-            case '+': result = lhs + rhs; break;
-            case '-': result = lhs - rhs; break;
-            case '*': result = lhs * rhs; break;
-            case '/': result = rhs ? lhs / rhs : 0; break;
-            case '%': result = rhs ? lhs % rhs : 0; break;
-            default: result = 0;
-        }
-        std::string s = arg;
-        s.replace(m.position(0), m.length(0), std::to_string(result));
-        return s;
-    }
-    return arg;
-}
-
-// --- Shell Variable Expansion ---
-std::string expand_shell_vars(const std::string& arg) {
-    std::regex var_re(R"(\$([A-Za-z_][A-Za-z0-9_]*)\b)");
-    std::smatch m;
-    std::string out = arg;
-    while (std::regex_search(out, m, var_re)) {
-        std::string var = m[1];
-        std::string val = shell_vars.count(var) ? shell_vars[var] : (getenv(var.c_str()) ? getenv(var.c_str()) : "");
-        out.replace(m.position(0), m.length(0), val);
-    }
-    return out;
-}
-
-// --- Parsing and Execution ---
 
 struct CmdSegment {
     std::vector<std::string> args;
@@ -210,6 +129,17 @@ std::vector<CmdSegment> parse_pipeline(const std::string& line) {
             if (!token.empty()) {
                 seg.args.push_back(token);
                 token.clear();
+            }
+            // Always split << and >> as separate arguments
+            if (c == '<' && i+1 < line.size() && line[i+1] == '<') {
+                seg.args.push_back("<<");
+                i++;
+            } else if (c == '>' && i+1 < line.size() && line[i+1] == '>') {
+                seg.args.push_back(">>");
+                i++;
+            } else if (c == '>' || c == '<' || c == '|' || c == '&') {
+                std::string op(1, c);
+                seg.args.push_back(op);
             }
             if (c == '|') {
                 segments.push_back(seg);
@@ -250,13 +180,24 @@ int run_pipeline(std::vector<CmdSegment>& segments) {
     int n = segments.size();
     int prev_fd = -1;
     std::vector<pid_t> pids;
+    pid_t pgid = 0;
+    int shell_terminal = STDIN_FILENO;
+    int shell_pgid = getpgrp();
+    struct termios shell_tmodes;
+    tcgetattr(shell_terminal, &shell_tmodes);
+
     for (int i = 0; i < n; ++i) {
         int pipefd[2];
         if (i < n-1) pipe(pipefd);
         pid_t pid = fork();
         if (pid == 0) {
-            // Restore default SIGINT in child
+            setpgid(0, pgid ? pgid : getpid());
+            if (!segments.back().background)
+                tcsetpgrp(shell_terminal, getpid());
             signal(SIGINT, SIG_DFL);
+            signal(SIGTSTP, SIG_DFL);
+            signal(SIGTTIN, SIG_DFL);
+            signal(SIGTTOU, SIG_DFL);
             if (!segments[i].input_redir.empty()) {
                 int fd = open(segments[i].input_redir.c_str(), O_RDONLY);
                 if (fd >= 0) { dup2(fd, 0); close(fd); }
@@ -273,27 +214,30 @@ int run_pipeline(std::vector<CmdSegment>& segments) {
                 dup2(pipefd[1], 1); close(pipefd[1]);
             }
             if (i < n-1) close(pipefd[0]);
-                        std::vector<std::string> final_args;
+            std::vector<std::string> final_args;
             for (auto& arg : segments[i].args) {
-                arg = command_substitute(arg);
-                arg = math_expand(arg);
-                arg = expand_shell_vars(arg);
-                std::vector<std::string> braces = expand_braces(arg);
-                for (auto& b : braces) {
-                    std::vector<std::string> globs = expand_glob(b);
-                    final_args.insert(final_args.end(), globs.begin(), globs.end());
-                }
+                // You may want to add command_substitute, math_expand, expand_shell_vars, etc. here
+                final_args.push_back(arg);
             }
             if (final_args.empty()) _exit(0);
             char** argv = new char*[final_args.size()+1];
             for (size_t j = 0; j < final_args.size(); ++j) argv[j] = strdup(final_args[j].c_str());
             argv[final_args.size()] = nullptr;
-                        execvp(argv[0], argv);
+            // Debug print for execvp
+            std::cerr << "[DEBUG] execvp: ";
+            for (size_t j = 0; j < final_args.size(); ++j) std::cerr << argv[j] << " ";
+            std::cerr << std::endl;
+            execvp(argv[0], argv);
             perror("execvp");
             _exit(127);
         } else if (pid > 0) {
             if (prev_fd != -1) close(prev_fd);
             if (i < n-1) { close(pipefd[1]); prev_fd = pipefd[0]; }
+            setpgid(pid, pgid ? pgid : pid);
+            if (!pgid) pgid = pid;
+            if (i == 0 && !segments.back().background) {
+                tcsetpgrp(shell_terminal, pid);
+            }
             pids.push_back(pid);
         } else {
             perror("fork");
@@ -301,16 +245,27 @@ int run_pipeline(std::vector<CmdSegment>& segments) {
         }
     }
     int status = 0;
-    for (auto pid : pids) {
-        if (!segments.back().background) waitpid(pid, &status, 0);
-        else bg_jobs.push_back(pid);
+    if (!segments.back().background) {
+        for (auto pid : pids) waitpid(pid, &status, WUNTRACED);
+        tcsetpgrp(shell_terminal, shell_pgid);
+        tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
+    } else {
+        for (auto pid : pids) bg_jobs.push_back(pid);
     }
     return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
 }
 
 // --- Main Loop ---
-
 int main(int argc, char* argv[]) {
+    // Job control setup
+    pid_t shell_pgid = getpid();
+    setpgid(shell_pgid, shell_pgid);
+    tcsetpgrp(STDIN_FILENO, shell_pgid);
+    signal(SIGTTOU, SIG_IGN);
+    signal(SIGTTIN, SIG_IGN);
+    signal(SIGTSTP, SIG_IGN);
+    // signal(SIGWINCH, handle_winch); // Let readline handle SIGWINCH
+
     std::string line;
     std::string ps1 = "[\\u@\\h \\w]$ ";
     std::string prompt;
@@ -331,12 +286,6 @@ int main(int argc, char* argv[]) {
         rl_redisplay();
     };
     signal(SIGINT, sigint_handler);
-    // SIGWINCH handler for terminal resize
-    auto sigwinch_handler = [](int) {
-        rl_resize_terminal();
-        rl_redisplay();
-    };
-    signal(SIGWINCH, sigwinch_handler);
     std::cout << COLOR_MAGENTA << "Welcome To Goonsh >~< (Type 'help' for commands. 'exit' or 'quit' to leave)" << COLOR_RESET << std::endl;
 
     // Scripting mode: goonsh file.sh
@@ -359,6 +308,7 @@ int main(int argc, char* argv[]) {
     }
 
     while (true) {
+        std::cerr << "[DEBUG] Top of main loop" << std::endl;
         prompt = get_prompt(ps1);
         char* input = readline(prompt.c_str());
         if (!input) {
@@ -383,9 +333,20 @@ int main(int argc, char* argv[]) {
         if (line.find_first_not_of(" \t\r\n") == std::string::npos) continue;
         add_history(line.c_str());
         auto segments = parse_pipeline(line);
-                // If single command, not background, and is a builtin, run in parent
+        // If single command, not background, and is a builtin, run in parent
         if (segments.size() == 1 && !segments[0].background && !segments[0].args.empty()) {
             std::string cmd = segments[0].args[0];
+            std::cerr << "[DEBUG] Parsed command: '" << cmd << "'\n";
+            static const std::map<std::string, std::string> builtin_help = {
+                {"cd",    "Usage: cd [DIR]\nChange the current directory to DIR."},
+                {"help",  "Usage: help\nShow this help message."},
+                {"exit",  "Usage: exit\nExit the shell."},
+                {"cat",   "Usage: cat [FILE]...\nConcatenate FILE(s) to standard output."},
+                {"rm",    "Usage: rm [FILE]...\nRemove (unlink) the FILE(s)."},
+                {"touch", "Usage: touch [FILE]...\nChange file timestamps."},
+                {"mkdir", "Usage: mkdir [DIRECTORY]...\nCreate the DIRECTORY(ies), if they do not already exist."}
+            };
+            // Only handle true builtins
             if (cmd == "exit") {
                 std::cout << "Bye!" << std::endl;
                 break;
@@ -398,8 +359,54 @@ int main(int argc, char* argv[]) {
                 if (chdir(target) != 0) perror("cd");
                 continue;
             }
+            // Special case: cat with no arguments, print help and do not run
+            if (cmd == "cat" && segments[0].args.size() == 1) {
+                auto it = builtin_help.find(cmd);
+                if (it != builtin_help.end()) {
+                    std::cout << it->second << std::endl;
+                } else {
+                    std::cerr << "Error: missing arguments for command '" << cmd << "'" << std::endl;
+                }
+                continue;
+            }
         }
+        // Here-document (<< delimiter) support for first segment
+        for (auto& seg : segments) {
+            for (size_t i = 0; i + 1 < seg.args.size(); ++i) {
+                if (seg.args[i] == "<<") {
+                    std::string delimiter = seg.args[i + 1];
+                    std::string heredoc;
+                    std::string inputline;
+                    std::cout << "> " << std::flush;
+                    while (std::getline(std::cin, inputline)) {
+                        if (inputline == delimiter) break;
+                        heredoc += inputline + "\n";
+                        std::cout << "> " << std::flush;
+                    }
+                    int pipefd[2];
+                    pipe(pipefd);
+                    write(pipefd[1], heredoc.c_str(), heredoc.size());
+                    close(pipefd[1]);
+                    seg.input_redir = "/dev/fd/" + std::to_string(pipefd[0]);
+                    seg.args.erase(seg.args.begin() + i, seg.args.begin() + i + 2);
+                    break;
+                }
+            }
+        }
+        // Ignore SIGINT and set SIGWINCH to default while running external commands
+        struct sigaction old_int, old_winch, ign, def;
+        ign.sa_handler = SIG_IGN;
+        sigemptyset(&ign.sa_mask);
+        ign.sa_flags = 0;
+        def.sa_handler = SIG_DFL;
+        sigemptyset(&def.sa_mask);
+        def.sa_flags = 0;
+        sigaction(SIGINT, &ign, &old_int);
+        sigaction(SIGWINCH, &def, &old_winch);
         last_status = run_pipeline(segments);
+        // Restore custom handlers after command execution
+        sigaction(SIGINT, &old_int, nullptr);
+        sigaction(SIGWINCH, &old_winch, nullptr);
         save_history_file();
     }
     return 0;
