@@ -46,6 +46,9 @@
 #include "config.h"
 #include "completion.h"
 
+// Definition for global heredoc fds
+std::vector<int> global_heredoc_fds;
+
 #define COLOR_RESET   "\033[0m"
 #define COLOR_BLUE    "\033[34m"
 #define COLOR_GREEN   "\033[32m"
@@ -177,6 +180,7 @@ std::vector<CmdSegment> parse_pipeline(const std::string& line) {
 }
 
 int run_pipeline(std::vector<CmdSegment>& segments) {
+    extern std::vector<int> global_heredoc_fds; // Access heredoc fds
     int n = segments.size();
     int prev_fd = -1;
     std::vector<pid_t> pids;
@@ -198,7 +202,19 @@ int run_pipeline(std::vector<CmdSegment>& segments) {
             signal(SIGTSTP, SIG_DFL);
             signal(SIGTTIN, SIG_DFL);
             signal(SIGTTOU, SIG_DFL);
-            if (!segments[i].input_redir.empty()) {
+            // Check for heredoc fd marker
+            int heredoc_fd = -1;
+            for (auto it = segments[i].args.begin(); it != segments[i].args.end(); ++it) {
+                if (it->find("__HEREDOC_FD__") == 0) {
+                    heredoc_fd = std::stoi(it->substr(14));
+                    segments[i].args.erase(it);
+                    break;
+                }
+            }
+            if (heredoc_fd != -1) {
+                dup2(heredoc_fd, 0);
+                close(heredoc_fd);
+            } else if (!segments[i].input_redir.empty()) {
                 int fd = open(segments[i].input_redir.c_str(), O_RDONLY);
                 if (fd >= 0) { dup2(fd, 0); close(fd); }
             } else if (prev_fd != -1) {
@@ -216,14 +232,12 @@ int run_pipeline(std::vector<CmdSegment>& segments) {
             if (i < n-1) close(pipefd[0]);
             std::vector<std::string> final_args;
             for (auto& arg : segments[i].args) {
-                // You may want to add command_substitute, math_expand, expand_shell_vars, etc. here
                 final_args.push_back(arg);
             }
             if (final_args.empty()) _exit(0);
             char** argv = new char*[final_args.size()+1];
             for (size_t j = 0; j < final_args.size(); ++j) argv[j] = strdup(final_args[j].c_str());
             argv[final_args.size()] = nullptr;
-            // Debug print for execvp
             std::cerr << "[DEBUG] execvp: ";
             for (size_t j = 0; j < final_args.size(); ++j) std::cerr << argv[j] << " ";
             std::cerr << std::endl;
@@ -252,6 +266,9 @@ int run_pipeline(std::vector<CmdSegment>& segments) {
     } else {
         for (auto pid : pids) bg_jobs.push_back(pid);
     }
+    // Cleanup heredoc fds
+    for (int fd : global_heredoc_fds) close(fd);
+    global_heredoc_fds.clear();
     return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
 }
 
@@ -370,29 +387,65 @@ int main(int argc, char* argv[]) {
                 continue;
             }
         }
-        // Here-document (<< delimiter) support for first segment
+        // Improved here-document (<< delimiter) support
+        std::vector<int> heredoc_fds; // To track open heredoc pipes for cleanup
         for (auto& seg : segments) {
             for (size_t i = 0; i + 1 < seg.args.size(); ++i) {
                 if (seg.args[i] == "<<") {
                     std::string delimiter = seg.args[i + 1];
                     std::string heredoc;
                     std::string inputline;
-                    std::cout << "> " << std::flush;
-                    while (std::getline(std::cin, inputline)) {
-                        if (inputline == delimiter) break;
-                        heredoc += inputline + "\n";
+                    bool heredoc_aborted = false;
+                    // Setup SIGINT handler for heredoc
+                    struct sigaction old_int, heredoc_int;
+                    heredoc_int.sa_handler = [](int) { throw std::runtime_error("heredoc-abort"); };
+                    sigemptyset(&heredoc_int.sa_mask);
+                    heredoc_int.sa_flags = 0;
+                    sigaction(SIGINT, &heredoc_int, &old_int);
+                    try {
                         std::cout << "> " << std::flush;
+                        while (true) {
+                            if (!std::getline(std::cin, inputline)) { // Ctrl+D (EOF)
+                                heredoc_aborted = true;
+                                std::cout << "^D" << std::endl;
+                                break;
+                            }
+                            if (inputline == delimiter) break;
+                            heredoc += inputline + "\n";
+                            std::cout << "> " << std::flush;
+                        }
+                    } catch (const std::runtime_error&) {
+                        heredoc_aborted = true;
+                        std::cout << "^C" << std::endl;
+                    }
+                    sigaction(SIGINT, &old_int, nullptr); // Restore handler
+                    if (heredoc_aborted) {
+                        // Remove heredoc args so command is not run
+                        seg.args.clear();
+                        break;
                     }
                     int pipefd[2];
-                    pipe(pipefd);
+                    if (pipe(pipefd) == -1) {
+                        perror("pipe");
+                        continue;
+                    }
                     write(pipefd[1], heredoc.c_str(), heredoc.size());
                     close(pipefd[1]);
-                    seg.input_redir = "/dev/fd/" + std::to_string(pipefd[0]);
-                    seg.args.erase(seg.args.begin() + i, seg.args.begin() + i + 2);
+                    // Mark this segment to use the heredoc pipe as stdin
+                    seg.input_redir = ""; // Clear any file-based input redir
+                    // Store the fd for use in run_pipeline
+                    if (!seg.args.empty()) {
+                        seg.args.erase(seg.args.begin() + i, seg.args.begin() + i + 2);
+                        seg.args.push_back("__HEREDOC_FD__" + std::to_string(pipefd[0]));
+                        heredoc_fds.push_back(pipefd[0]);
+                    }
                     break;
                 }
             }
         }
+        // Pass heredoc_fds to run_pipeline via a static/global (for simplicity)
+        static std::vector<int> global_heredoc_fds;
+        global_heredoc_fds = heredoc_fds;
         // Ignore SIGINT and set SIGWINCH to default while running external commands
         struct sigaction old_int, old_winch, ign, def;
         ign.sa_handler = SIG_IGN;
