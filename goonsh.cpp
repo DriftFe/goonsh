@@ -57,9 +57,7 @@ std::vector<int> global_heredoc_fds;
 #define COLOR_MAGENTA "\033[35m"
 #define COLOR_BOLD    "\033[1m"
 
-// Debug mode: set GOONSH_DEBUG=1 in environment to enable
-bool GOONSH_DEBUG = (getenv("GOONSH_DEBUG") && std::string(getenv("GOONSH_DEBUG")) == "1");
-#define DBG(fmt, ...) do { if (GOONSH_DEBUG) fprintf(stderr, "[DBG] " fmt "\n", ##__VA_ARGS__); } while(0)
+// Debug code removed
 
 std::vector<std::string> builtins = {"cd","ls","pwd","echo","cat","touch","rm","mkdir","rmdir","cp","mv","head","tail","grep","wc","whoami","date","env","export","unset","history","which","clear","alias","unalias","help","exit","quit","man","time","jobs","fg","bg"};
 std::map<std::string, std::string> aliases;
@@ -238,9 +236,7 @@ int run_pipeline(std::vector<CmdSegment>& segments) {
             char** argv = new char*[final_args.size()+1];
             for (size_t j = 0; j < final_args.size(); ++j) argv[j] = strdup(final_args[j].c_str());
             argv[final_args.size()] = nullptr;
-            std::cerr << "[DEBUG] execvp: ";
-            for (size_t j = 0; j < final_args.size(); ++j) std::cerr << argv[j] << " ";
-            std::cerr << std::endl;
+            // Debug print removed
             execvp(argv[0], argv);
             perror("execvp");
             _exit(127);
@@ -325,7 +321,6 @@ int main(int argc, char* argv[]) {
     }
 
     while (true) {
-        std::cerr << "[DEBUG] Top of main loop" << std::endl;
         prompt = get_prompt(ps1);
         char* input = readline(prompt.c_str());
         if (!input) {
@@ -353,7 +348,6 @@ int main(int argc, char* argv[]) {
         // If single command, not background, and is a builtin, run in parent
         if (segments.size() == 1 && !segments[0].background && !segments[0].args.empty()) {
             std::string cmd = segments[0].args[0];
-            std::cerr << "[DEBUG] Parsed command: '" << cmd << "'\n";
             static const std::map<std::string, std::string> builtin_help = {
                 {"cd",    "Usage: cd [DIR]\nChange the current directory to DIR."},
                 {"help",  "Usage: help\nShow this help message."},
