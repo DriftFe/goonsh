@@ -1,1 +1,1 @@
-Ill add soon when im not lazy asf 😔 (and when it actually works)
+```g++ -std=c++17 -Wall -g *.cpp -lreadline -o goonsh``` :p 
