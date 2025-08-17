@@ -193,17 +193,6 @@ g++ -std=c++17 -Wall -g -DDEBUG *.cpp -lreadline -o goonsh
 ./goonsh
 ```
 
-## 📋 Roadmap
-
-- [ ] Syntax highlighting
-- [ ] Command validation
-- [ ] Plugin system
-- [ ] Themes support
-- [ ] Better error handling
-- [ ] Performance optimizations
-- [ ] Windows support
-
-## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
