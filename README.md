@@ -2,16 +2,16 @@
 A really cool and goated frfr shell
 
 ## Features
-- **Autosuggestions** - Smart command completion from history
-- **Tab completion** - Commands, files, and directories
-- **Job control** - Background processes and process management
-- **Customizable prompts** - Configure your shell appearance
-- **Command history** - Persistent history across sessions
-- **Aliases support** - Create shortcuts for frequently used commands
-- **Pipeline support** - Full pipe, redirection, and here-document support
-- **Built-in commands** - Essential shell utilities included
-- **Configuration files** - Customize behavior with `.goonshrc`
-- **Scripting support** - Run shell scripts with `goonsh script.sh`
+- **Autosuggestions**
+- **Tab completion**
+- **Job control** 
+- **Customizable prompts** 
+- **Command history** 
+- **Aliases support** 
+- **Pipeline support** 
+- **Built-in commands** 
+- **Configuration files** 
+- **Scripting support**
 
 ## Installation
 
