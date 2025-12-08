@@ -37,6 +37,7 @@ sudo dnf install gcc-c++ readline-devel
 
 # Arch Linux
 sudo pacman -S base-devel readline
+```
 
 #### Build from Source
 ```bash
