@@ -1,4 +1,4 @@
-# GoonSH/GSH
+# gsh
 A really cool and goated frfr shell
 
 ## Features
@@ -18,10 +18,10 @@ A really cool and goated frfr shell
 ### Arch Linux (AUR)
 ```bash
 # Using yay
-yay -S goonsh
+yay -S gsh
 
 # Using paru
-paru -S goonsh
+paru -S gsh
 ```
 
 ### Manual Installation
@@ -43,15 +43,15 @@ sudo pacman -S base-devel readline
 ```bash
 git clone https://github.com/yourusername/goonsh.git
 cd goonsh
-g++ -std=c++17 -Wall -g *.cpp -lreadline -o goonsh
-sudo mv goonsh /usr/local/bin/
+g++ -std=c++17 -Wall -g *.cpp -lreadline -o gsh
+sudo mv gsh /usr/local/bin/
 ```
 
 ## Start -
 
-1. **Start Goonsh:**
+1. **Start gsh:**
    ```bash
-   goonsh
+   gsh
    ```
 
 2. **Autosuggestions thingi (kinda weird):**
@@ -67,12 +67,12 @@ sudo mv goonsh /usr/local/bin/
 
 4. **Run a script:**
    ```bash
-   goonsh myscript.sh
+   gsh myscript.sh
    ```
 
 ## Configuration
 
-### Configuration File: `~/.goonshrc`
+### Configuration File: `~/.gshrc`
 ```bash
 # Set custom prompt
 prompt="\[\033[36m\]\u@\h\[\033[0m\]:\[\033[32m\]\w\[\033[0m\]$ "
@@ -83,7 +83,7 @@ alias grep="grep --color=auto"
 alias ..="cd .."
 
 # Custom commands (run on startup)
-echo "Welcome to your customized Goonsh!"
+echo "Welcome to your customized gsh!"
 ```
 
 ### Built-in Commands
@@ -107,21 +107,21 @@ echo "Welcome to your customized Goonsh!"
 
 ### Basic Commands
 ```bash
-goonsh> ls -la
-goonsh> cd ~/Documents
-goonsh> echo "Hello, Zain!"
+gsh> ls -la
+gsh> cd ~/Documents
+gsh> echo "Hello, Zain!"
 ```
 
 ### Pipelines and Redirection
 ```bash
-goonsh> ls -la | grep ".txt" > text_files.log
-goonsh> cat file.txt | head -10 | tail -5
-goonsh> sort names.txt >> sorted_names.txt
+gsh> ls -la | grep ".txt" > text_files.log
+gsh> cat file.txt | head -10 | tail -5
+gsh> sort names.txt >> sorted_names.txt
 ```
 
 ### Here Documents
 ```bash
-goonsh> cat << EOF
+gsh> cat << EOF
 > This is a thingi
 > very cool
 > EOF
@@ -129,16 +129,16 @@ goonsh> cat << EOF
 
 ### Job Control
 ```bash
-goonsh> long_running_command &    # Run in background
-goonsh> jobs                      # List background jobs
-goonsh> fg                        # Bring to foreground
+gsh> long_running_command &    # Run in background
+gsh> jobs                      # List background jobs
+gsh> fg                        # Bring to foreground
 ```
 
 ### Aliases
 ```bash
-goonsh> alias ll="ls -la"
-goonsh> ll                        # Runs 'ls -la'
-goonsh> unalias ll               # Remove alias
+gsh> alias ll="ls -la"
+gsh> ll                        # Runs 'ls -la'
+gsh> unalias ll               # Remove alias
 ```
 
 ## Advanced Features
@@ -151,9 +151,9 @@ goonsh> unalias ll               # Remove alias
 
 ### Environment Variables
 ```bash
-goonsh> export MY_VAR="value"
-goonsh> echo $MY_VAR
-goonsh> env                       # Show all variables
+gsh> export MY_VAR="value"
+gsh> echo $MY_VAR
+gsh> env                       # Show all variables
 ```
 
 ### History Features
@@ -167,12 +167,12 @@ goonsh> env                       # Show all variables
 
 **Command not found:**
 ```bash
-# Make sure goonsh is in your PATH
-which goonsh
+# Make sure gsh is in your PATH
+which gsh
 ```
 
 **Autosuggestions not working:**
-- Ensure you have command history (`~/.goonsh_history`)
+- Ensure you have command history (`~/.gsh_history`)
 - Try typing commands to build up history
 
 **Tab completion issues:**
@@ -190,8 +190,8 @@ sudo dnf install readline-devel    # Fedora/RHEL
 ```bash
 git clone https://github.com/yourusername/goonsh.git
 cd goonsh
-g++ -std=c++17 -Wall -g -DDEBUG *.cpp -lreadline -o goonsh
-./goonsh
+g++ -std=c++17 -Wall -g -DDEBUG *.cpp -lreadline -o gsh
+./gsh
 ```
 
 

@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include <string>
 
-const std::string HISTORY_FILE = std::string(getenv("HOME")) + "/.goonsh_history";
+const std::string HISTORY_FILE = std::string(getenv("HOME")) + "/.gsh_history";
 
 void load_history_file() {
     read_history(HISTORY_FILE.c_str());

@@ -6,7 +6,7 @@
 #include <cstdlib>
 #include <algorithm>
 
-const std::string RC_FILE = std::string(getenv("HOME")) + "/.goonshrc";
+const std::string RC_FILE = std::string(getenv("HOME")) + "/.gshrc";
 
 void load_config(std::map<std::string, std::string>& aliases, std::string& prompt, std::vector<std::string>& rc_commands) {
     std::ifstream file(RC_FILE);

@@ -61,7 +61,7 @@ std::vector<int> global_heredoc_fds;
 
 std::vector<std::string> builtins = {"cd","ls","pwd","echo","cat","touch","rm","mkdir","rmdir","cp","mv","head","tail","grep","wc","whoami","date","env","export","unset","history","which","clear","alias","unalias","help","exit","quit","man","time","jobs","fg","bg"};
 std::map<std::string, std::string> aliases;
-std::map<std::string, std::string> shell_vars = {{"GOONSH_THEME", "default"}};
+std::map<std::string, std::string> shell_vars = {{"GSH_THEME", "default"}};
 int last_status = 0;
 std::vector<pid_t> bg_jobs;
 
@@ -318,9 +318,9 @@ int main(int argc, char* argv[]) {
         rl_redisplay();
     };
     signal(SIGINT, sigint_handler);
-    std::cout << COLOR_MAGENTA << "Welcome To Goonsh >~< (Type 'help' for commands. 'exit' or 'quit' to leave)" << COLOR_RESET << std::endl;
+    std::cout << COLOR_MAGENTA << "Welcome To gsh >~< (Type 'help' for commands. 'exit' or 'quit' to leave)" << COLOR_RESET << std::endl;
 
-    // Scripting mode: goonsh file.sh
+    // Scripting mode: gsh file.sh
     if (argc == 2) {
         std::ifstream script(argv[1]);
         if (!script) { std::cerr << "Cannot open script: " << argv[1] << std::endl; return 1; }
@@ -332,7 +332,7 @@ int main(int argc, char* argv[]) {
         return last_status;
     }
 
-    // Execute commands from ~/.goonshrc
+    // Execute commands from ~/.gshrc
     for (const auto& rc_line : rc_commands) {
         if (rc_line.empty()) continue;
         auto segments = parse_pipeline(rc_line);
