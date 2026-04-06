@@ -145,7 +145,7 @@ void goonsh_redisplay() {
 }
 
 // Wrap the completion function to set/clear the flag
-char** goonsh_completion(const char* text, int start, int end) {
+char** goonsh_completion(const char* text, int /*start*/, int /*end*/) {
     goonsh_completion_active = true;
     char** result = rl_completion_matches(text, completion_generator);
     goonsh_completion_active = false;

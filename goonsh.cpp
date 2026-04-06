@@ -66,7 +66,7 @@ int last_status = 0;
 std::vector<pid_t> bg_jobs;
 
 // --- SIGWINCH handler (must be global for signal) ---
-void handle_winch(int sig) {
+void handle_winch(int /*sig*/) {
     struct winsize w;
     ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
     // Optionally store w.ws_row and w.ws_col if needed
@@ -107,73 +107,93 @@ struct CmdSegment {
     std::string input_redir;
     std::string output_redir;
     std::string output_append_redir;
+    std::string heredoc_delim;
     bool background = false;
 };
+
+static std::vector<std::string> tokenize_command_line(const std::string& line) {
+    std::vector<std::string> tokens;
+    std::string token;
+    bool in_single = false, in_double = false, escape = false;
+
+    auto flush_token = [&]() {
+        if (!token.empty()) {
+            tokens.push_back(token);
+            token.clear();
+        }
+    };
+
+    for (size_t i = 0; i < line.size(); ++i) {
+        char c = line[i];
+        if (escape) {
+            token += c;
+            escape = false;
+            continue;
+        }
+        if (c == '\\') {
+            escape = true;
+            continue;
+        }
+        if (c == '\'' && !in_double) {
+            in_single = !in_single;
+            continue;
+        }
+        if (c == '"' && !in_single) {
+            in_double = !in_double;
+            continue;
+        }
+        if (!in_single && !in_double) {
+            if (isspace(static_cast<unsigned char>(c))) {
+                flush_token();
+                continue;
+            }
+            if (c == '<' || c == '>' || c == '|' || c == '&') {
+                flush_token();
+                if ((c == '<' || c == '>') && i + 1 < line.size() && line[i + 1] == c) {
+                    tokens.emplace_back(2, c);
+                    ++i;
+                } else {
+                    tokens.emplace_back(1, c);
+                }
+                continue;
+            }
+        }
+        token += c;
+    }
+
+    if (escape) token += '\\';
+    flush_token();
+    return tokens;
+}
 
 std::vector<CmdSegment> parse_pipeline(const std::string& line) {
     std::vector<CmdSegment> segments;
     CmdSegment seg;
-    std::string token;
-    bool in_single = false, in_double = false, escape = false;
-    for (size_t i = 0; i <= line.size(); ++i) {
-        char c = (i < line.size()) ? line[i] : ' ';
-        if (escape) {
-            token += c;
-            escape = false;
-        } else if (c == '\\') {
-            escape = true;
-        } else if (c == '\'' && !in_double) {
-            in_single = !in_single;
-        } else if (c == '"' && !in_single) {
-            in_double = !in_double;
-        } else if (!in_single && !in_double && (isspace(c) || c == '|' || c == '>' || c == '<' || c == '&' || i == line.size())) {
-            if (!token.empty()) {
-                seg.args.push_back(token);
-                token.clear();
-            }
-            // Always split << and >> as separate arguments
-            if (c == '<' && i+1 < line.size() && line[i+1] == '<') {
-                seg.args.push_back("<<");
-                i++;
-            } else if (c == '>' && i+1 < line.size() && line[i+1] == '>') {
-                seg.args.push_back(">>");
-                i++;
-            } else if (c == '>' || c == '<' || c == '|' || c == '&') {
-                std::string op(1, c);
-                seg.args.push_back(op);
-            }
-            if (c == '|') {
-                segments.push_back(seg);
-                seg = CmdSegment();
-            } else if (c == '>') {
-                if (i+1 < line.size() && line[i+1] == '>') {
-                    i++;
-                    while (i+1 < line.size() && isspace(line[i+1])) i++;
-                    size_t start = ++i;
-                    while (i < line.size() && !isspace(line[i]) && line[i] != '|' && line[i] != '<' && line[i] != '&') i++;
-                    seg.output_append_redir = line.substr(start, i-start);
-                    i--;
-                } else {
-                    while (i+1 < line.size() && isspace(line[i+1])) i++;
-                    size_t start = ++i;
-                    while (i < line.size() && !isspace(line[i]) && line[i] != '|' && line[i] != '<' && line[i] != '&') i++;
-                    seg.output_redir = line.substr(start, i-start);
-                    i--;
-                }
-            } else if (c == '<') {
-                while (i+1 < line.size() && isspace(line[i+1])) i++;
-                size_t start = ++i;
-                while (i < line.size() && !isspace(line[i]) && line[i] != '|' && line[i] != '>' && line[i] != '&') i++;
-                seg.input_redir = line.substr(start, i-start);
-                i--;
-            } else if (c == '&') {
-                seg.background = true;
-            }
+    auto tokens = tokenize_command_line(line);
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        const std::string& tok = tokens[i];
+        if (tok == "|") {
+            segments.push_back(seg);
+            seg = CmdSegment();
+        } else if (tok == "<") {
+            if (i + 1 < tokens.size()) seg.input_redir = tokens[++i];
+        } else if (tok == ">") {
+            if (i + 1 < tokens.size()) seg.output_redir = tokens[++i];
+        } else if (tok == ">>") {
+            if (i + 1 < tokens.size()) seg.output_append_redir = tokens[++i];
+        } else if (tok == "<<") {
+            if (i + 1 < tokens.size()) seg.heredoc_delim = tokens[++i];
+        } else if (tok == "&") {
+            seg.background = true;
         } else {
-            token += c;
+            seg.args.push_back(tok);
         }
     }
-    segments.push_back(seg);
+    if (!seg.args.empty() || !seg.input_redir.empty() || !seg.output_redir.empty() ||
+        !seg.output_append_redir.empty() || !seg.heredoc_delim.empty() || seg.background ||
+        segments.empty()) {
+        segments.push_back(seg);
+    }
     return segments;
 }
 
@@ -287,7 +307,6 @@ int main(int argc, char* argv[]) {
     if (!prompt.empty()) ps1 = prompt;
     load_history_file();
     rl_attempted_completion_function = goonsh_completion;
-    rl_redisplay_function = goonsh_redisplay; // Enable fish-like ghost suggestions
     rl_bind_keyseq("\033[C", accept_suggestion); // Right arrow
     // Custom SIGINT handler for main shell
     extern void clear_last_suggestion();
@@ -371,7 +390,8 @@ int main(int argc, char* argv[]) {
                 continue;
             }
             // Special case: cat with no arguments, print help and do not run
-            if (cmd == "cat" && segments[0].args.size() == 1) {
+            if (cmd == "cat" && segments[0].args.size() == 1 &&
+                segments[0].input_redir.empty() && segments[0].heredoc_delim.empty()) {
                 auto it = builtin_help.find(cmd);
                 if (it != builtin_help.end()) {
                     std::cout << it->second << std::endl;
@@ -383,62 +403,46 @@ int main(int argc, char* argv[]) {
         }
         // Improved here-document (<< delimiter) support
         std::vector<int> heredoc_fds; // To track open heredoc pipes for cleanup
+        bool heredoc_aborted = false;
         for (auto& seg : segments) {
-            for (size_t i = 0; i + 1 < seg.args.size(); ++i) {
-                if (seg.args[i] == "<<") {
-                    std::string delimiter = seg.args[i + 1];
-                    std::string heredoc;
-                    std::string inputline;
-                    bool heredoc_aborted = false;
-                    // Setup SIGINT handler for heredoc
-                    struct sigaction old_int, heredoc_int;
-                    heredoc_int.sa_handler = [](int) { throw std::runtime_error("heredoc-abort"); };
-                    sigemptyset(&heredoc_int.sa_mask);
-                    heredoc_int.sa_flags = 0;
-                    sigaction(SIGINT, &heredoc_int, &old_int);
-                    try {
-                        std::cout << "> " << std::flush;
-                        while (true) {
-                            if (!std::getline(std::cin, inputline)) { // Ctrl+D (EOF)
-                                heredoc_aborted = true;
-                                std::cout << "^D" << std::endl;
-                                break;
-                            }
-                            if (inputline == delimiter) break;
-                            heredoc += inputline + "\n";
-                            std::cout << "> " << std::flush;
-                        }
-                    } catch (const std::runtime_error&) {
-                        heredoc_aborted = true;
-                        std::cout << "^C" << std::endl;
-                    }
-                    sigaction(SIGINT, &old_int, nullptr); // Restore handler
-                    if (heredoc_aborted) {
-                        // Remove heredoc args so command is not run
-                        seg.args.clear();
-                        break;
-                    }
-                    int pipefd[2];
-                    if (pipe(pipefd) == -1) {
-                        perror("pipe");
-                        continue;
-                    }
-                    write(pipefd[1], heredoc.c_str(), heredoc.size());
-                    close(pipefd[1]);
-                    // Mark this segment to use the heredoc pipe as stdin
-                    seg.input_redir = ""; // Clear any file-based input redir
-                    // Store the fd for use in run_pipeline
-                    if (!seg.args.empty()) {
-                        seg.args.erase(seg.args.begin() + i, seg.args.begin() + i + 2);
-                        seg.args.push_back("__HEREDOC_FD__" + std::to_string(pipefd[0]));
-                        heredoc_fds.push_back(pipefd[0]);
-                    }
+            if (seg.heredoc_delim.empty()) continue;
+
+            std::string heredoc;
+            while (true) {
+                char* heredoc_line = readline("> ");
+                if (!heredoc_line) {
+                    heredoc_aborted = true;
+                    std::cout << std::endl;
                     break;
                 }
+
+                std::string inputline = heredoc_line;
+                free(heredoc_line);
+                if (inputline == seg.heredoc_delim) break;
+                heredoc += inputline + "\n";
             }
+
+            if (heredoc_aborted) break;
+
+            int pipefd[2];
+            if (pipe(pipefd) == -1) {
+                perror("pipe");
+                heredoc_aborted = true;
+                break;
+            }
+
+            write(pipefd[1], heredoc.c_str(), heredoc.size());
+            close(pipefd[1]);
+            seg.input_redir.clear();
+            seg.args.push_back("__HEREDOC_FD__" + std::to_string(pipefd[0]));
+            heredoc_fds.push_back(pipefd[0]);
+        }
+
+        if (heredoc_aborted) {
+            for (int fd : heredoc_fds) close(fd);
+            continue;
         }
         // Pass heredoc_fds to run_pipeline via a static/global (for simplicity)
-        static std::vector<int> global_heredoc_fds;
         global_heredoc_fds = heredoc_fds;
         // Ignore SIGINT and set SIGWINCH to default while running external commands
         struct sigaction old_int, old_winch, ign, def;
