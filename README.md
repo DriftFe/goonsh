@@ -1,4 +1,4 @@
-# gsh
+# dgsh
 A really cool and goated frfr shell
 
 ## Features
@@ -18,10 +18,10 @@ A really cool and goated frfr shell
 ### Arch Linux (AUR)
 ```bash
 # Using yay
-yay -S gsh
+yay -S dgsh
 
 # Using paru
-paru -S gsh
+paru -S dgsh
 ```
 
 ### Manual Installation
@@ -43,15 +43,15 @@ sudo pacman -S base-devel readline
 ```bash
 git clone https://github.com/yourusername/goonsh.git
 cd goonsh
-g++ -std=c++17 -Wall -g *.cpp -lreadline -o gsh
-sudo mv gsh /usr/local/bin/
+g++ -std=c++17 -Wall -g *.cpp -lreadline -o dgsh
+sudo mv dgsh /usr/local/bin/
 ```
 
 ## Start -
 
-1. **Start gsh:**
+1. **Start dgsh:**
    ```bash
-   gsh
+   dgsh
    ```
 
 2. **Autosuggestions thingi (kinda weird):**
@@ -67,12 +67,12 @@ sudo mv gsh /usr/local/bin/
 
 4. **Run a script:**
    ```bash
-   gsh myscript.sh
+   dgsh myscript.sh
    ```
 
 ## Configuration
 
-### Configuration File: `~/.gshrc`
+### Configuration File: `~/.dgshrc`
 ```bash
 # Set custom prompt
 prompt="\[\033[36m\]\u@\h\[\033[0m\]:\[\033[32m\]\w\[\033[0m\]$ "
@@ -83,7 +83,7 @@ alias grep="grep --color=auto"
 alias ..="cd .."
 
 # Custom commands (run on startup)
-echo "Welcome to your customized gsh!"
+echo "Welcome to your customized dgsh!"
 ```
 
 ### Built-in Commands
@@ -107,21 +107,21 @@ echo "Welcome to your customized gsh!"
 
 ### Basic Commands
 ```bash
-gsh> ls -la
-gsh> cd ~/Documents
-gsh> echo "Hello, Zain!"
+dgsh> ls -la
+dgsh> cd ~/Documents
+dgsh> echo "Hello, Zain!"
 ```
 
 ### Pipelines and Redirection
 ```bash
-gsh> ls -la | grep ".txt" > text_files.log
-gsh> cat file.txt | head -10 | tail -5
-gsh> sort names.txt >> sorted_names.txt
+dgsh> ls -la | grep ".txt" > text_files.log
+dgsh> cat file.txt | head -10 | tail -5
+dgsh> sort names.txt >> sorted_names.txt
 ```
 
 ### Here Documents
 ```bash
-gsh> cat << EOF
+dgsh> cat << EOF
 > This is a thingi
 > very cool
 > EOF
@@ -129,16 +129,16 @@ gsh> cat << EOF
 
 ### Job Control
 ```bash
-gsh> long_running_command &    # Run in background
-gsh> jobs                      # List background jobs
-gsh> fg                        # Bring to foreground
+dgsh> long_running_command &    # Run in background
+dgsh> jobs                      # List background jobs
+dgsh> fg                        # Bring to foreground
 ```
 
 ### Aliases
 ```bash
-gsh> alias ll="ls -la"
-gsh> ll                        # Runs 'ls -la'
-gsh> unalias ll               # Remove alias
+dgsh> alias ll="ls -la"
+dgsh> ll                        # Runs 'ls -la'
+dgsh> unalias ll               # Remove alias
 ```
 
 ## Advanced Features
@@ -151,9 +151,9 @@ gsh> unalias ll               # Remove alias
 
 ### Environment Variables
 ```bash
-gsh> export MY_VAR="value"
-gsh> echo $MY_VAR
-gsh> env                       # Show all variables
+dgsh> export MY_VAR="value"
+dgsh> echo $MY_VAR
+dgsh> env                       # Show all variables
 ```
 
 ### History Features
@@ -167,12 +167,12 @@ gsh> env                       # Show all variables
 
 **Command not found:**
 ```bash
-# Make sure gsh is in your PATH
-which gsh
+# Make sure dgsh is in your PATH
+which dgsh
 ```
 
 **Autosuggestions not working:**
-- Ensure you have command history (`~/.gsh_history`)
+- Ensure you have command history (`~/.dgsh_history`)
 - Try typing commands to build up history
 
 **Tab completion issues:**
@@ -190,8 +190,8 @@ sudo dnf install readline-devel    # Fedora/RHEL
 ```bash
 git clone https://github.com/yourusername/goonsh.git
 cd goonsh
-g++ -std=c++17 -Wall -g -DDEBUG *.cpp -lreadline -o gsh
-./gsh
+g++ -std=c++17 -Wall -g -DDEBUG *.cpp -lreadline -o dgsh
+./dgsh
 ```
 
 
