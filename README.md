@@ -1,45 +1,40 @@
-# dgsh
-A really cool and goated frfr shell
+# dgsh ♡
+a really cool and goated frfr shell that i made >~< it's got autosuggestions, tab completion, job control and a bunch of other stuff!! hope u like it hehe
 
-## Features
-- **Autosuggestions**
-- **Tab completion**
-- **Job control** 
-- **Customizable prompts** 
-- **Command history** 
-- **Aliases support** 
-- **Pipeline support** 
-- **Built-in commands** 
-- **Configuration files** 
-- **Scripting support**
+## features ♡
+- **autosuggestions** - it literally reads ur mind
+- **tab completion** - less typing more vibing
+- **job control** - multitasking swag
+- **customizable prompts** - make it cute!!
+- **command history** - it remembers everything (unlike me)
+- **aliases support** - shortcut everything
+- **pipeline support** - chain commands like a pro
+- **built-in commands** - batteries included
+- **configuration files** - tweak it till it feels like urs
+- **scripting support** - automate the boring stuff
 
-## Installation
-
-### Arch Linux (AUR)
+## installation ♡
+### arch linux (aur)
+obviously the best way >:3
 ```bash
-# Using yay
+# using yay
 yay -S dgsh
-
-# Using paru
+# using paru
 paru -S dgsh
 ```
-
-### Manual Installation
-
-#### Prerequisites
+### manual installation
+if u wanna do it the hard way, which is valid!!
+#### prerequisites
 ```bash
-# Ubuntu/Debian
+# ubuntu/debian
 sudo apt update
 sudo apt install build-essential libreadline-dev
-
-# Fedora/RHEL
+# fedora/rhel
 sudo dnf install gcc-c++ readline-devel
-
-# Arch Linux
+# arch linux
 sudo pacman -S base-devel readline
 ```
-
-#### Build from Source
+#### build from source
 ```bash
 git clone https://github.com/yourusername/goonsh.git
 cd goonsh
@@ -47,146 +42,126 @@ g++ -std=c++17 -Wall -g *.cpp -lreadline -o dgsh
 sudo mv dgsh /usr/local/bin/
 ```
 
-## Start -
-
-1. **Start dgsh:**
+## getting started ♡
+1. **launch dgsh!!**
    ```bash
    dgsh
    ```
-
-2. **Autosuggestions thingi (kinda weird):**
-   - Type part of a previous command
-   - See gray suggestions appear
-   - Press → (right arrow) to accept
-
-3. **Tab Completion:**
+2. **autosuggestions thingi (kinda weird but i promise it's cool):**
+   - type part of a previous command
+   - see gray suggestions appear
+   - press → to accept!! so satisfying
+3. **tab completion:**
    ```bash
-   ls ~/Doc<TAB>        # Completes to ~/Documents/
-   git che<TAB>         # Completes to git checkout
+   ls ~/Doc<TAB>        # completes to ~/Documents/
+   git che<TAB>         # completes to git checkout
    ```
-
-4. **Run a script:**
+4. **run a script:**
    ```bash
    dgsh myscript.sh
    ```
 
-## Configuration
-
-### Configuration File: `~/.dgshrc`
+## configuration ♡
+### config file: `~/.dgshrc`
 ```bash
-# Set custom prompt
+# set custom prompt (make it cute!!)
 prompt="\[\033[36m\]\u@\h\[\033[0m\]:\[\033[32m\]\w\[\033[0m\]$ "
-
-# Define aliases
+# define aliases
 alias ll="ls -la"
 alias grep="grep --color=auto"
 alias ..="cd .."
-
-# Custom commands (run on startup)
-echo "Welcome to your customized dgsh!"
+# custom commands (run on startup)
+echo "welcome to your customized dgsh!!"
 ```
+### built-in commands
+- `cd` - change directory
+- `ls` - list directory contents
+- `pwd` - print working directory
+- `echo` - display text
+- `cat` - display file contents
+- `touch` - create/update files
+- `rm` - remove files (be careful omg)
+- `mkdir` - create directories
+- `cp`, `mv` - copy and move files
+- `grep`, `head`, `tail`, `wc` - text processing
+- `history` - command history
+- `alias`, `unalias` - manage aliases
+- `jobs`, `fg`, `bg` - job control
+- `help` - show available commands
+- `exit`, `quit` - leave dgsh (nooo)
 
-### Built-in Commands
-- `cd` - Change directory
-- `ls` - List directory contents  
-- `pwd` - Print working directory
-- `echo` - Display text
-- `cat` - Display file contents
-- `touch` - Create/update files
-- `rm` - Remove files
-- `mkdir` - Create directories
-- `cp`, `mv` - Copy and move files
-- `grep`, `head`, `tail`, `wc` - Text processing
-- `history` - Command history
-- `alias`, `unalias` - Manage aliases
-- `jobs`, `fg`, `bg` - Job control
-- `help` - Show available commands
-- `exit`, `quit` - Exit shell
-
-## Usage Examples
-
-### Basic Commands
+## usage examples ♡
+### basic commands
 ```bash
 dgsh> ls -la
 dgsh> cd ~/Documents
-dgsh> echo "Hello, Zain!"
+dgsh> echo "hello, zain!!"
 ```
-
-### Pipelines and Redirection
+### pipelines and redirection
 ```bash
 dgsh> ls -la | grep ".txt" > text_files.log
 dgsh> cat file.txt | head -10 | tail -5
 dgsh> sort names.txt >> sorted_names.txt
 ```
-
-### Here Documents
+### here documents
 ```bash
 dgsh> cat << EOF
-> This is a thingi
+> this is a thingi
 > very cool
 > EOF
 ```
-
-### Job Control
+### job control
 ```bash
-dgsh> long_running_command &    # Run in background
-dgsh> jobs                      # List background jobs
-dgsh> fg                        # Bring to foreground
+dgsh> long_running_command &    # run in background
+dgsh> jobs                      # list background jobs
+dgsh> fg                        # bring to foreground
 ```
-
-### Aliases
+### aliases
 ```bash
 dgsh> alias ll="ls -la"
-dgsh> ll                        # Runs 'ls -la'
-dgsh> unalias ll               # Remove alias
+dgsh> ll                        # runs 'ls -la'
+dgsh> unalias ll                # remove alias
 ```
 
-## Advanced Features
-
-### Custom Prompt Variables
-- `\u` - Username
-- `\h` - Hostname  
-- `\w` - Current working directory
+## advanced stuff ♡
+### custom prompt variables
+- `\u` - username
+- `\h` - hostname
+- `\w` - current working directory
 - `\$` - $ for regular user, # for root
-
-### Environment Variables
+### environment variables
 ```bash
 dgsh> export MY_VAR="value"
 dgsh> echo $MY_VAR
-dgsh> env                       # Show all variables
+dgsh> env                       # show all variables
 ```
+### history features
+- persistent command history
+- history-based autosuggestions
+- search through history with arrow keys
 
-### History Features
-- Persistent command history
-- History-based autosuggestions
-- Search through history with arrow keys
-
-## Troubleshooting
-
-### Common Issues
-
-**Command not found:**
+## troubleshooting ♡
+### common issues
+**command not found:**
 ```bash
-# Make sure dgsh is in your PATH
+# make sure dgsh is in ur PATH!!
 which dgsh
 ```
+**autosuggestions not working:**
+- make sure u have command history (`~/.dgsh_history`)
+- just type some commands to build up history first >_<
 
-**Autosuggestions not working:**
-- Ensure you have command history (`~/.dgsh_history`)
-- Try typing commands to build up history
+**tab completion issues:**
+- verify readline library is properly linked
+- check file permissions in current directory
 
-**Tab completion issues:**
-- Verify readline library is properly linked
-- Check file permissions in current directory
-
-**Build errors:**
+**build errors:**
 ```bash
-# Missing readline development headers
-sudo apt install libreadline-dev  # Ubuntu/Debian
-sudo dnf install readline-devel    # Fedora/RHEL
+# probably just missing readline headers!!
+sudo apt install libreadline-dev  # ubuntu/debian
+sudo dnf install readline-devel   # fedora/rhel
 ```
-
-### Development Setup
+### dev setup
 ```bash
 git clone https://github.com/yourusername/goonsh.git
 cd goonsh
@@ -194,7 +169,7 @@ g++ -std=c++17 -Wall -g -DDEBUG *.cpp -lreadline -o dgsh
 ./dgsh
 ```
 
+---
+licensed under the MIT license - see the [LICENSE](LICENSE) file for details!!
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-ty for reading, youre very cool :3
+ty for reading, ur very cool :3 ♡
